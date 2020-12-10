@@ -509,7 +509,7 @@ export default class MovieDetails extends Vue {
     if (!this.currentMovie) return "";
 
     if (this.currentMovie.frontCover)
-      return `${serverBase}/image/${
+      return `${serverBase}/media/image/${
         this.currentMovie.frontCover._id
       }?password=${localStorage.getItem("password")}`;
     return "";
@@ -519,7 +519,7 @@ export default class MovieDetails extends Vue {
     if (!this.currentMovie) return "";
 
     if (this.currentMovie.backCover)
-      return `${serverBase}/image/${
+      return `${serverBase}/media/image/${
         this.currentMovie.backCover._id
       }?password=${localStorage.getItem("password")}`;
     return this.frontCover;
@@ -529,7 +529,7 @@ export default class MovieDetails extends Vue {
     if (!this.currentMovie) return "";
 
     if (this.currentMovie.spineCover)
-      return `${serverBase}/image/${
+      return `${serverBase}/media/image/${
         this.currentMovie.spineCover._id
       }?password=${localStorage.getItem("password")}`;
     return null;
@@ -643,10 +643,6 @@ export default class MovieDetails extends Vue {
     });
   }
 
-  imageLink(image: any) {
-    return `${serverBase}/image/${image._id}?password=${localStorage.getItem("password")}`;
-  }
-
   refreshLabels() {
     if (!this.currentMovie) return;
 
@@ -695,7 +691,7 @@ export default class MovieDetails extends Vue {
 
   get studioLogo() {
     if (this.currentMovie && this.currentMovie.studio && this.currentMovie.studio.thumbnail)
-      return `${serverBase}/image/${
+      return `${serverBase}/media/image/${
         this.currentMovie.studio.thumbnail._id
       }?password=${localStorage.getItem("password")}`;
     return "";

@@ -1,3 +1,6 @@
+// typescript needs to be bundled with the executable
+import "typescript";
+
 import axios from "axios";
 import boxen from "boxen";
 import cheerio from "cheerio";
@@ -13,18 +16,53 @@ import * as os from "os";
 import * as nodepath from "path";
 import readline from "readline";
 import semver from "semver";
+import { register } from "ts-node";
 import YAML from "yaml";
+import zod from "zod";
 
 import { IConfig } from "../config/schema";
+import { getMatcher } from "../matching/matcher";
 import { walk } from "../utils/fs/async";
 import * as logger from "../utils/logger";
-import { libraryPath } from "../utils/misc";
+import { libraryPath } from "../utils/path";
 import { Dictionary } from "../utils/types";
 import VERSION from "../version";
 
-function requireUncached(module: string): unknown {
-  delete require.cache[require.resolve(module)];
-  return <unknown>require(module);
+let didRegisterTsNode = false;
+
+function requireUncached(modulePath: string): unknown {
+  if (!didRegisterTsNode && modulePath.endsWith(".ts")) {
+    register({
+      emit: false,
+      skipProject: true, // Do not use this projects tsconfig.json
+      transpileOnly: true, // Disable type checking
+      compilerHost: true,
+      compilerOptions: {
+        allowJs: true,
+        target: "es6",
+        module: "commonjs",
+        lib: ["es6", "dom", "es2016", "es2018"],
+        sourceMap: true,
+        removeComments: false,
+        esModuleInterop: true,
+        checkJs: false,
+        isolatedModules: false,
+      },
+    });
+    didRegisterTsNode = true;
+  }
+
+  try {
+    delete require.cache[require.resolve(modulePath)];
+    return <unknown>require(modulePath);
+  } catch (err) {
+    const _err = err as Error;
+    logger.error(`Error requiring ${modulePath}:`);
+    logger.error(_err);
+    logger.error(_err.message);
+
+    throw err;
+  }
 }
 
 export async function runPluginsSerial(
@@ -105,6 +143,8 @@ export async function runPlugin(
     try {
       const result = (await func({
         $walk: walk,
+        $matcher: getMatcher(),
+        $zod: zod,
         $version: VERSION,
         $config: JSON.parse(JSON.stringify(config)) as IConfig,
         $pluginName: pluginName,

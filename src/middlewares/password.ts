@@ -8,19 +8,24 @@ import * as logger from "../utils/logger";
 const SIGN_IN_HTML = readFileSync("./views/signin.html", "utf-8");
 
 function validatePassword(input: string | undefined, real: string | null): boolean {
-  if (!real) return true;
-  if (!input) return false;
-  if (sha512(input) === real) return true;
+  if (!real) {
+    return true;
+  }
+  if (!input) {
+    return false;
+  }
+  if (sha512(input) === real) {
+    return true;
+  }
   return real === input;
 }
 
-export function checkPassword(
-  req: express.Request,
-  res: express.Response
-): express.Response<unknown> | undefined {
+export function checkPassword(req: express.Request, res: express.Response): unknown {
   const password = (<Record<string, unknown>>req.query).password as string | undefined;
 
-  if (!password) return res.sendStatus(400);
+  if (!password) {
+    return res.sendStatus(400);
+  }
 
   const config = getConfig();
 
@@ -35,9 +40,11 @@ export function passwordHandler(
   req: express.Request,
   res: express.Response,
   next: express.NextFunction
-): void | express.Response<unknown> {
+): unknown {
   const config = getConfig();
-  if (!config.auth.password) return next();
+  if (!config.auth.password) {
+    return next();
+  }
 
   if (validatePassword(<string>req.headers["x-pass"], config.auth.password)) {
     logger.log("Auth OK");

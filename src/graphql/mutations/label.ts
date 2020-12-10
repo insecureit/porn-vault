@@ -1,10 +1,17 @@
 import { labelCollection } from "../../database";
-import { isMatchingItem } from "../../extractor";
+import { buildLabelExtractor } from "../../extractor";
+import { updateActors } from "../../search/actor";
+import { updateImages } from "../../search/image";
 import { updateScenes } from "../../search/scene";
+import { updateStudios } from "../../search/studio";
+import Actor from "../../types/actor";
+import Image from "../../types/image";
 import Label from "../../types/label";
 import LabelledItem from "../../types/labelled_item";
 import Scene from "../../types/scene";
+import Studio from "../../types/studio";
 import * as logger from "../../utils/logger";
+import { filterInvalidAliases } from "../../utils/misc";
 
 type ILabelUpdateOpts = Partial<{
   name: string;
@@ -13,6 +20,33 @@ type ILabelUpdateOpts = Partial<{
 }>;
 
 export default {
+  async removeLabel(_: unknown, { item, label }: { item: string; label: string }): Promise<true> {
+    await LabelledItem.remove(item, label);
+
+    if (item.startsWith("sc_")) {
+      const scene = await Scene.getById(item);
+      if (scene) {
+        await updateScenes([scene]);
+      }
+    } else if (item.startsWith("im_")) {
+      const image = await Image.getById(item);
+      if (image) {
+        await updateImages([image]);
+      }
+    } else if (item.startsWith("st_")) {
+      const studio = await Studio.getById(item);
+      if (studio) {
+        await updateStudios([studio]);
+      }
+    } else if (item.startsWith("ac_")) {
+      const actor = await Actor.getById(item);
+      if (actor) {
+        await updateActors([actor]);
+      }
+    }
+
+    return true;
+  },
   async removeLabels(_: unknown, { ids }: { ids: string[] }): Promise<boolean> {
     for (const id of ids) {
       const label = await Label.getById(id);
@@ -26,10 +60,12 @@ export default {
   },
 
   async addLabel(_: unknown, args: { name: string; aliases?: string[] }): Promise<Label> {
-    const label = new Label(args.name, args.aliases);
+    const aliases = filterInvalidAliases(args.aliases || []);
+    const label = new Label(args.name, aliases);
 
+    const localExtractLabels = await buildLabelExtractor([label]);
     for (const scene of await Scene.getAll()) {
-      if (isMatchingItem(scene.path || scene.name, label, false)) {
+      if (localExtractLabels(scene.path || scene.name).includes(label._id)) {
         const labels = (await Scene.getLabels(scene)).map((l) => l._id);
         labels.push(label._id);
         await Scene.setLabels(scene, labels);
@@ -64,7 +100,9 @@ export default {
       const label = await Label.getById(id);
 
       if (label) {
-        if (Array.isArray(opts.aliases)) label.aliases = [...new Set(opts.aliases)];
+        if (Array.isArray(opts.aliases)) {
+          label.aliases = [...new Set(filterInvalidAliases(opts.aliases))];
+        }
 
         if (typeof opts.name === "string") label.name = opts.name.trim();
 

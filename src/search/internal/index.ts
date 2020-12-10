@@ -1,5 +1,6 @@
 // TS bindings for Gianna
 import Axios from "axios";
+import fetch from "node-fetch";
 
 import { getConfig } from "../../config";
 
@@ -66,15 +67,6 @@ export namespace Gianna {
       return res.data.items_count;
     }
 
-    async times(): Promise<[number, number][]> {
-      // eslint-disable-next-line camelcase
-      const res = await Axios.get<{ query_times: [number, number][] }>(
-        `http://localhost:${getConfig().binaries.giannaPort}/index/${this.name}/times`
-      );
-      // eslint-disable-next-line camelcase
-      return res.data.query_times;
-    }
-
     async clear(): Promise<void> {
       await Axios.delete(
         `http://localhost:${getConfig().binaries.giannaPort}/index/${this.name}/clear`
@@ -94,11 +86,23 @@ export namespace Gianna {
     }
 
     async remove(items: string[]): Promise<void> {
-      await Axios.delete(`http://localhost:${getConfig().binaries.giannaPort}/index/${this.name}`, {
-        data: {
-          items,
-        },
-      });
+      // TODO: replace with axios
+      const res = await fetch(
+        `http://localhost:${getConfig().binaries.giannaPort}/index/${this.name}`,
+        {
+          headers: {
+            "Content-Type": "application/json",
+          },
+          method: "DELETE",
+          body: JSON.stringify({
+            items,
+          }),
+        }
+      );
+      if (res.ok) {
+        return;
+      }
+      throw new Error(`Request failed: ${res.status}`);
     }
 
     async search(opts: ISearchOptions): Promise<ISearchResults> {

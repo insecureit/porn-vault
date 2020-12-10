@@ -4,6 +4,7 @@ import { actorCollection, actorReferenceCollection, imageCollection } from "../d
 import { unlinkAsync } from "../utils/fs/async";
 import { generateHash } from "../utils/hash";
 import * as logger from "../utils/logger";
+import { arrayDiff } from "../utils/misc";
 import Actor from "./actor";
 import ActorReference from "./actor_reference";
 import Label from "./label";
@@ -22,6 +23,7 @@ export default class Image {
   _id: string;
   name: string;
   path: string | null = null;
+  thumbPath: string | null = null;
   scene: string | null = null;
   addedOn = +new Date();
   favorite = false;
@@ -70,9 +72,14 @@ export default class Image {
   static async remove(image: Image): Promise<void> {
     await imageCollection.remove(image._id);
     try {
-      if (image.path) await unlinkAsync(image.path);
+      if (image.path) {
+        await unlinkAsync(image.path);
+      }
+      if (image.thumbPath) {
+        await unlinkAsync(image.thumbPath);
+      }
     } catch (error) {
-      logger.warn("Could not delete source file for image " + image._id);
+      logger.warn(`Could not delete source file for image ${image._id}`);
     }
   }
 
@@ -118,17 +125,17 @@ export default class Image {
   }
 
   static async setActors(image: Image, actorIds: string[]): Promise<void> {
-    const references = await ActorReference.getByItem(image._id);
+    const oldRefs = await ActorReference.getByItem(image._id);
 
-    const oldActorReferences = references.map((r) => r._id);
+    const { removed, added } = arrayDiff(oldRefs, [...new Set(actorIds)], "actor", (l) => l);
 
-    for (const id of oldActorReferences) {
-      await actorReferenceCollection.remove(id);
+    for (const oldRef of removed) {
+      await actorReferenceCollection.remove(oldRef._id);
     }
 
-    for (const id of [...new Set(actorIds)]) {
+    for (const id of added) {
       const actorReference = new ActorReference(image._id, id, "image");
-      logger.log("Adding actor to image: " + JSON.stringify(actorReference));
+      logger.log(`Adding actor to image: ${JSON.stringify(actorReference)}`);
       await actorReferenceCollection.upsert(actorReference._id, actorReference);
     }
   }
@@ -148,7 +155,7 @@ export default class Image {
   }
 
   constructor(name: string) {
-    this._id = "im_" + generateHash();
+    this._id = `im_${generateHash()}`;
     this.name = name.trim();
   }
 }

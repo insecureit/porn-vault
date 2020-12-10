@@ -1,6 +1,6 @@
 import { markerCollection } from "../../database";
 import { extractLabels } from "../../extractor";
-import { updateMarkers } from "../../search/marker";
+import { indexMarkers, updateMarkers } from "../../search/marker";
 import LabelledItem from "../../types/labelled_item";
 import Marker from "../../types/marker";
 import * as logger from "../../utils/logger";
@@ -60,10 +60,9 @@ export default {
         await markerCollection.upsert(marker._id, marker);
         updatedMarkers.push(marker);
       }
-
-      await updateMarkers(updatedMarkers);
     }
 
+    await updateMarkers(updatedMarkers);
     return updatedMarkers;
   },
 
@@ -96,6 +95,8 @@ export default {
     await Marker.setLabels(marker, existingLabels);
 
     await Marker.createMarkerThumbnail(marker);
+
+    await indexMarkers([marker]);
 
     return marker;
   },

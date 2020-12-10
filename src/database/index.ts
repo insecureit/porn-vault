@@ -17,8 +17,8 @@ import Studio from "../types/studio";
 import SceneView from "../types/watch";
 import { mkdirpSync } from "../utils/fs/async";
 import * as logger from "../utils/logger";
-import { libraryPath } from "../utils/misc";
-import { Izzy } from "./internal/index";
+import { libraryPath } from "../utils/path";
+import { Izzy } from "./internal";
 
 mkdirpSync("backups/");
 mkdirpSync("tmp/");
@@ -38,17 +38,34 @@ export let markerCollection!: Izzy.Collection<Marker>;
 export let studioCollection!: Izzy.Collection<Studio>;
 export let processingCollection!: Izzy.Collection<ISceneProcessingItem>;
 
+export async function loadImageStore(): Promise<void> {
+  imageCollection = await Izzy.createCollection("images", libraryPath("images.db"), [
+    {
+      name: "scene-index",
+      key: "scene",
+    },
+    {
+      name: "studio-index",
+      key: "studio",
+    },
+    {
+      name: "path-index",
+      key: "path",
+    },
+  ]);
+}
+
 export async function loadStores(): Promise<void> {
   const crossReferencePath = libraryPath("cross_references.db");
   if (existsSync(crossReferencePath)) {
-    logger.error("cross_references.db found, are you using an outdated library?");
-    process.exit(1);
+    throw new Error("cross_references.db found, are you using an outdated library?");
   }
 
   try {
     logger.log("Creating folders if needed");
     mkdirpSync(libraryPath("images/"));
     mkdirpSync(libraryPath("thumbnails/")); // generated screenshots
+    mkdirpSync(libraryPath("thumbnails/images")); // generated image thumbnails
     mkdirpSync(libraryPath("thumbnails/markers")); // generated marker thumbnails
     mkdirpSync(libraryPath("previews/"));
   } catch (err) {
@@ -72,21 +89,6 @@ export async function loadStores(): Promise<void> {
       name: "scene-index",
     },
   ]);
-
-  /* markerReferenceCollection = await Izzy.createCollection(
-    "marker-references",
-    libraryPath("marker_references.db"),
-    [
-      {
-        name: "marker-index",
-        key: "marker",
-      },
-      {
-        name: "scene-index",
-        key: "scene",
-      },
-    ]
-  ); */
 
   actorReferenceCollection = await Izzy.createCollection(
     "actor-references",
@@ -141,20 +143,7 @@ export async function loadStores(): Promise<void> {
     ]
   );
 
-  imageCollection = await Izzy.createCollection("images", libraryPath("images.db"), [
-    {
-      name: "scene-index",
-      key: "scene",
-    },
-    {
-      name: "studio-index",
-      key: "studio",
-    },
-    {
-      name: "path-index",
-      key: "path",
-    },
-  ]);
+  await loadImageStore();
 
   sceneCollection = await Izzy.createCollection("scenes", libraryPath("scenes.db"), [
     {

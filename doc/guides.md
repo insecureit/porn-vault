@@ -7,7 +7,6 @@
 5. [Build from source](#build-from-source)
 6. [Plugin usage](#plugin-usage)
 7. [Plugin development](#plugin-development)
-8. [Bulk import](#bulk-import)
 
 ## Config
 
@@ -19,6 +18,11 @@ See https://github.com/porn-vault/porn-vault/blob/dev/doc/config.md
 - Unzip the file
 - Run the application in the terminal of your choice and follow the on-screen instructions
 - Once your app is setup you can visit it on `http://localhost:3000` (or your LAN IP equivalent) in your web browser of choice
+
+> NOTE: If manually running in the terminal by doing `porn-vault.exe` or `./porn-vault`, you **MUST** be in the same directory as the executable.
+> Examples:
+> - `./path/to/vault/porn-vault.exe` will not work
+> - `cd ./path/to/vault`, `porn-vault.exe` will work
 
 ### Docker
 
@@ -43,7 +47,3 @@ See https://github.com/porn-vault/porn-vault/blob/dev/doc/plugins_intro.md
 ## Plugin development
 
 See https://github.com/porn-vault/porn-vault/blob/dev/doc/plugin_development.md
-
-## Bulk import
-
-See the [bulk import doc](import.md)

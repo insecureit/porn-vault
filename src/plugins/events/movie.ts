@@ -1,8 +1,9 @@
 import { resolve } from "path";
 
 import { getConfig } from "../../config";
+import { ApplyStudioLabelsEnum } from "../../config/schema";
 import { imageCollection, studioCollection } from "../../database";
-import { extractFields, extractStudios } from "../../extractor";
+import { buildFieldExtractor, extractStudios } from "../../extractor";
 import { runPluginsSerial } from "../../plugins";
 import { indexImages } from "../../search/image";
 import { indexStudios } from "../../search/studio";
@@ -11,11 +12,16 @@ import Movie from "../../types/movie";
 import Studio from "../../types/studio";
 import { downloadFile } from "../../utils/download";
 import * as logger from "../../utils/logger";
-import { libraryPath, validRating } from "../../utils/misc";
+import { validRating } from "../../utils/misc";
+import { libraryPath } from "../../utils/path";
 import { extensionFromUrl } from "../../utils/string";
+import { onStudioCreate } from "./studio";
 
 // This function has side effects
-export async function onMovieCreate(movie: Movie, event = "movieCreated"): Promise<Movie> {
+export async function onMovieCreate(
+  movie: Movie,
+  event: "movieCreated" = "movieCreated"
+): Promise<Movie> {
   const config = getConfig();
 
   const pluginResult = await runPluginsSerial(config, event, {
@@ -23,7 +29,7 @@ export async function onMovieCreate(movie: Movie, event = "movieCreated"): Promi
     movieName: movie.name,
     $createLocalImage: async (path: string, name: string, thumbnail?: boolean) => {
       path = resolve(path);
-      logger.log("Creating image from " + path);
+      logger.log(`Creating image from ${path}`);
       if (await Image.getImageByPath(path)) {
         logger.warn(`Image ${path} already exists in library`);
         return null;
@@ -33,7 +39,7 @@ export async function onMovieCreate(movie: Movie, event = "movieCreated"): Promi
         img.name += " (thumbnail)";
       }
       img.path = path;
-      logger.log("Created image " + img._id);
+      logger.log(`Created image ${img._id}`);
       await imageCollection.upsert(img._id, img);
       if (!thumbnail) {
         await indexImages([img]);
@@ -42,7 +48,7 @@ export async function onMovieCreate(movie: Movie, event = "movieCreated"): Promi
     },
     $createImage: async (url: string, name: string, thumbnail?: boolean) => {
       // if (!isValidUrl(url)) throw new Error(`Invalid URL: ` + url);
-      logger.log("Creating image from " + url);
+      logger.log(`Creating image from ${url}`);
       const img = new Image(name);
       if (thumbnail) {
         img.name += " (thumbnail)";
@@ -51,7 +57,7 @@ export async function onMovieCreate(movie: Movie, event = "movieCreated"): Promi
       const path = libraryPath(`images/${img._id}${ext}`);
       await downloadFile(url, path);
       img.path = path;
-      logger.log("Created image " + img._id);
+      logger.log(`Created image ${img._id}`);
       await imageCollection.upsert(img._id, img);
       if (!thumbnail) {
         await indexImages([img]);
@@ -96,6 +102,10 @@ export async function onMovieCreate(movie: Movie, event = "movieCreated"): Promi
     movie.releaseDate = new Date(pluginResult.releaseDate).valueOf();
   }
 
+  if (typeof pluginResult.addedOn === "number") {
+    movie.addedOn = new Date(pluginResult.addedOn).valueOf();
+  }
+
   if (validRating(pluginResult.rating)) {
     movie.rating = pluginResult.rating;
   }
@@ -109,23 +119,36 @@ export async function onMovieCreate(movie: Movie, event = "movieCreated"): Promi
   }
 
   if (pluginResult.custom && typeof pluginResult.custom === "object") {
+    const localExtractFields = await buildFieldExtractor();
     for (const key in pluginResult.custom) {
-      const fields = await extractFields(key);
+      const fields = localExtractFields(key);
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       if (fields.length) movie.customFields[fields[0]] = pluginResult.custom[key];
     }
   }
 
   if (!movie.studio && pluginResult.studio && typeof pluginResult.studio === "string") {
-    const studioId = (await extractStudios(pluginResult.studio))[0];
+    const studioId = (await extractStudios(pluginResult.studio))[0] || null;
 
     if (studioId) movie.studio = studioId;
     else if (config.plugins.createMissingStudios) {
-      const studio = new Studio(pluginResult.studio);
+      const studioLabels: string[] = [];
+      let studio = new Studio(pluginResult.studio);
       movie.studio = studio._id;
+
+      studio = await onStudioCreate(studio, studioLabels, "studioCreated");
       await studioCollection.upsert(studio._id, studio);
+      await Studio.findUnmatchedScenes(
+        studio,
+        config.matching.applyStudioLabels.includes(
+          ApplyStudioLabelsEnum.enum["event:studio:create"]
+        )
+          ? studioLabels
+          : []
+      );
       await indexStudios([studio]);
-      logger.log("Created studio " + studio.name);
+
+      logger.log(`Created studio ${studio.name}`);
     }
   }
 

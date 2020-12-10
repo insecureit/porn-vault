@@ -1,59 +1,105 @@
-import ffmpeg from "fluent-ffmpeg";
-import { resolve } from "path";
+import Jimp from "jimp";
 
 import args from "./args";
 import { deleteGianna, ensureGiannaExists } from "./binaries/gianna";
-import { deleteIzzy, ensureIzzyExists } from "./binaries/izzy";
-import { checkConfig, getConfig } from "./config";
+import { deleteIzzy, ensureIzzyExists, izzyVersion, resetIzzy, spawnIzzy } from "./binaries/izzy";
+import { checkConfig, findAndLoadConfig, getConfig } from "./config";
 import { IConfig } from "./config/schema";
-import { validateFFMPEGPaths } from "./config/validate";
+import { imageCollection, loadImageStore } from "./database";
 import { applyExitHooks } from "./exit";
-import { checkUnusedPlugins, validatePlugins } from "./plugins/validate";
 import { queueLoop } from "./queue_loop";
+import { isBlacklisted } from "./search/image";
 import startServer from "./server";
+import Image from "./types/image";
 import * as logger from "./utils/logger";
 import { printMaxMemory } from "./utils/mem";
-import { isRegExp } from "./utils/types";
+import { libraryPath } from "./utils/path";
 
-export function onConfigLoad(config: IConfig): void {
-  validatePlugins(config);
-  checkUnusedPlugins(config);
-
-  logger.message("Registered plugins", Object.keys(config.plugins.register));
-  logger.log(config);
-
-  if (config.scan.excludeFiles && config.scan.excludeFiles.length) {
-    for (const regStr of config.scan.excludeFiles) {
-      if (!isRegExp(regStr)) {
-        logger.error(`Invalid regex: '${regStr}'.`);
-        process.exit(1);
-      }
-    }
+function skipImage(image: Image) {
+  if (!image.path) {
+    logger.warn(`Image ${image._id}: no path`);
+    return true;
   }
-
-  validateFFMPEGPaths(config);
-
-  const ffmpegPath = resolve(config.binaries.ffmpeg);
-  const ffprobePath = resolve(config.binaries.ffprobe);
-
-  ffmpeg.setFfmpegPath(ffmpegPath);
-  ffmpeg.setFfprobePath(ffprobePath);
-
-  logger.message("FFMPEG set to " + ffmpegPath);
-  logger.message("FFPROBE set to " + ffprobePath);
+  if (image.thumbPath) {
+    return true;
+  }
+  if (isBlacklisted(image.name)) {
+    return true;
+  }
+  return false;
 }
 
 async function startup() {
   logger.log("Startup...");
 
+  logger.log(args);
+
   printMaxMemory();
 
-  await checkConfig();
-  const config = getConfig();
+  let config: IConfig;
 
-  onConfigLoad(config);
+  try {
+    const shouldRestart = await findAndLoadConfig();
+    if (shouldRestart) {
+      process.exit(0);
+    }
 
-  if (args["process-queue"] === true) {
+    config = getConfig();
+    checkConfig(config);
+  } catch (err) {
+    process.exit(1);
+  }
+
+  if (args["generate-image-thumbnails"]) {
+    if (await izzyVersion()) {
+      logger.log("Izzy already running, clearing...");
+      await resetIzzy();
+    } else {
+      await spawnIzzy();
+    }
+    await loadImageStore();
+    await imageCollection.compact();
+    applyExitHooks();
+
+    const images = await Image.getAll();
+
+    let i = 0;
+    let amountImagesToBeProcessed = 0;
+
+    images.forEach((image) => {
+      if (!skipImage(image)) {
+        amountImagesToBeProcessed++;
+      }
+    });
+
+    for (const image of images) {
+      try {
+        if (skipImage(image)) {
+          continue;
+        }
+        i++;
+        const jimpImage = await Jimp.read(image.path!);
+        // Small image thumbnail
+        logger.message(
+          `${i}/${amountImagesToBeProcessed}: Creating image thumbnail for ${image._id}`
+        );
+        if (jimpImage.bitmap.width > jimpImage.bitmap.height && jimpImage.bitmap.width > 320) {
+          jimpImage.resize(320, Jimp.AUTO);
+        } else if (jimpImage.bitmap.height > 320) {
+          jimpImage.resize(Jimp.AUTO, 320);
+        }
+        image.thumbPath = libraryPath(`thumbnails/images/${image._id}.jpg`);
+        await jimpImage.writeAsync(image.thumbPath);
+        await imageCollection.upsert(image._id, image);
+      } catch (error) {
+        const _err = error as Error;
+        logger.error(`${image._id} (${image.path}) failed: ${_err.message}`);
+      }
+    }
+    process.exit(0);
+  }
+
+  if (args["process-queue"]) {
     await queueLoop(config);
   } else {
     if (args["update-gianna"]) {
