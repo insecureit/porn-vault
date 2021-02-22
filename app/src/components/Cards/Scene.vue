@@ -71,39 +71,47 @@
       </v-hover>
     </a>
 
-    <div v-if="value.studio" class="mt-2 pl-4 text-uppercase caption">
-      <router-link
-        class="hover"
-        style="color: inherit; text-decoration: none"
-        :to="`/studio/${value.studio._id}`"
-        >{{ value.studio.name }}</router-link
-      >
-    </div>
-    <v-card-title :class="`${value.studio ? 'pt-0' : ''}`">
-      <span
-        :title="value.name"
-        style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis"
-        >{{ value.name }}</span
-      >
-    </v-card-title>
-    <v-card-subtitle v-if="value.actors.length" class="pb-1">
-      With
-      <span v-html="actorLinks"></span>
-    </v-card-subtitle>
-    <Rating @change="rate" class="ml-3 mb-2" :value="value.rating" />
-    <div class="py-1 px-4" v-if="value.labels.length && showLabels">
-      <label-group :allowRemove="false" :item="value._id" v-model="value.labels" />
+    <div class="px-2">
+      <div v-if="hasTopLine" class="d-flex my-2 text-uppercase caption">
+        <router-link
+          v-if="value.studio"
+          class="hover"
+          style="color: inherit; text-decoration: none"
+          :to="`/studio/${value.studio._id}`"
+          >{{ value.studio.name }}</router-link
+        >
+        <v-spacer />
+        <div v-if="releaseDate" class="med--text">
+          {{ releaseDate }}
+        </div>
+      </div>
+      <v-card-title class="px-0 pt-0" style="font-size: 1.1rem; line-height: 1.75rem">
+        <span
+          :title="value.name"
+          style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis"
+          >{{ value.name }}</span
+        >
+      </v-card-title>
+      <v-card-subtitle v-if="value.actors.length" class="px-0 pb-1">
+        With
+        <span v-html="actorLinks"></span>
+      </v-card-subtitle>
+      <Rating @change="rate" class="mb-2" :value="value.rating" />
+      <div class="py-1" v-if="value.labels.length && showLabels">
+        <label-group :allowRemove="false" :item="value._id" v-model="value.labels" />
+      </div>
     </div>
   </v-card>
 </template>
 
 <script lang="ts">
 import { Component, Prop, Mixins } from "vue-property-decorator";
-import IScene from "../types/scene";
-import { contextModule } from "../store/context";
-import { ensureDarkColor } from "../util/color";
+import IScene from "@/types/scene";
+import { contextModule } from "@/store/context";
+import { ensureDarkColor } from "@/util/color";
 import Color from "color";
-import SceneMixin from "../mixins/scene";
+import SceneMixin from "@/mixins/scene";
+import moment from "moment";
 
 @Component
 export default class SceneCard extends Mixins(SceneMixin) {
@@ -113,14 +121,29 @@ export default class SceneCard extends Mixins(SceneMixin) {
   playIndex = 0;
   playInterval = null as NodeJS.Timeout | null;
 
+  // Card contains top line containing studio/date
+  get hasTopLine() {
+    return this.value.studio || this.releaseDate;
+  }
+
+  get releaseDate(): string | null {
+    if (this.value.releaseDate) {
+      return moment(this.value.releaseDate).format("YYYY.MM.DD");
+    }
+    return null;
+  }
+
   get complementary() {
-    if (this.cardColor) return Color(this.cardColor).negate().hex() + " !important";
+    if (this.cardColor) {
+      return Color(this.cardColor).negate().hex() + " !important";
+    }
     return undefined;
   }
 
   get cardColor() {
-    if (this.value.thumbnail && this.value.thumbnail.color)
+    if (this.value.thumbnail && this.value.thumbnail.color) {
       return ensureDarkColor(this.value.thumbnail.color);
+    }
     return null;
   }
 
@@ -150,7 +173,6 @@ export default class SceneCard extends Mixins(SceneMixin) {
       this.$refs.video.setAttribute("src", "");
     } catch (error) {}
     if (this.playInterval) {
-      // console.log("stopping video");
       clearInterval(this.playInterval);
     }
   }
@@ -164,7 +186,6 @@ export default class SceneCard extends Mixins(SceneMixin) {
 
   destroyed() {
     if (this.playInterval) {
-      // console.log("stopping video");
       clearInterval(this.playInterval);
     }
   }

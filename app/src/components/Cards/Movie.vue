@@ -41,50 +41,38 @@
       </a>
     </v-hover>
 
-    <div v-if="showBody">
-      <div v-if="value.studio" class="mt-2 pl-4 text-uppercase caption">
+    <div v-if="showBody" class="px-2">
+      <div v-if="hasTopLine" class="d-flex my-2 text-uppercase caption">
         <router-link
+          v-if="value.studio"
           class="hover"
           style="color: inherit; text-decoration: none"
           :to="`/studio/${value.studio._id}`"
           >{{ value.studio.name }}</router-link
         >
+        <v-spacer />
+        <div v-if="releaseDate" class="med--text">
+          {{ releaseDate }}
+        </div>
       </div>
-      <v-card-title :class="`${value.studio ? 'pt-0' : ''}`">
+      <v-card-title style="font-size: 1.1rem; line-height: 1.75rem" class="px-0 pt-0">
         <span
           :title="value.name"
           style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis"
           >{{ value.name }}</span
         >
       </v-card-title>
-      <v-card-subtitle v-if="showActors && value.actors.length" class="pt-0 pb-0">
+      <v-card-subtitle v-if="showActors && value.actors.length" class="px-0 pt-0 pb-0">
         With
         <span v-html="actorLinks"></span>
       </v-card-subtitle>
-      <v-card-subtitle v-if="showSceneCount" class="pt-0 pb-1"
+      <v-card-subtitle v-if="showSceneCount" class="pl-0 pt-0 pb-1"
         >{{ value.scenes.length }}
         {{ value.scenes.length == 1 ? "scene" : "scenes" }}</v-card-subtitle
       >
-      <Rating v-if="showRating" class="ml-3 mb-2" :value="value.rating" :readonly="true" />
-      <div class="pa-2" v-if="this.value.labels.length && showLabels">
-        <v-chip
-          label
-          class="mr-1 mb-1"
-          small
-          outlined
-          v-for="label in labelNames.slice(0, 5)"
-          :key="label"
-          >{{ label }}</v-chip
-        >
-
-        <v-tooltip bottom>
-          <template v-slot:activator="{ on }">
-            <v-chip v-on="on" label class="mr-1 mb-1" small outlined v-if="labelNames.length > 5"
-              >...and more</v-chip
-            >
-          </template>
-          {{ labelNames.slice(5, 999).join(", ") }}
-        </v-tooltip>
+      <Rating v-if="showRating" class="mb-2" :value="value.rating" :readonly="true" />
+      <div class="py-1" v-if="value.labels.length && showLabels">
+        <label-group :item="value._id" :value="value.labels" :allowRemove="false" />
       </div>
     </div>
   </v-card>
@@ -92,12 +80,12 @@
 
 <script lang="ts">
 import { Component, Vue, Prop } from "vue-property-decorator";
-import ApolloClient, { serverBase } from "../apollo";
+import ApolloClient, { serverBase } from "@/apollo";
 import gql from "graphql-tag";
-import IMovie from "../types/movie";
-import { copy } from "../util/object";
+import IMovie from "@/types/movie";
+import { copy } from "@/util/object";
 import moment from "moment";
-import { ensureDarkColor } from "../util/color";
+import { ensureDarkColor } from "@/util/color";
 import Color from "color";
 
 @Component
@@ -109,6 +97,18 @@ export default class MovieCard extends Vue {
   @Prop({ default: true }) showBody!: boolean;
   @Prop({ default: true }) showRating!: boolean;
   @Prop({ default: true }) showSceneCount!: boolean;
+
+  // Card contains top line containing studio/date
+  get hasTopLine() {
+    return this.value.studio || this.releaseDate;
+  }
+
+  get releaseDate(): string | null {
+    if (this.value.releaseDate) {
+      return moment(this.value.releaseDate).format("YYYY.MM.DD");
+    }
+    return null;
+  }
 
   get complementary() {
     if (this.cardColor) return Color(this.cardColor).negate().hex() + " !important";
@@ -174,10 +174,6 @@ export default class MovieCard extends Vue {
     });
   }
 
-  get labelNames() {
-    return this.value.labels.map((l) => l.name).sort();
-  }
-
   get actorLinks() {
     const names = this.value.actors.map(
       (a) =>
@@ -192,7 +188,7 @@ export default class MovieCard extends Vue {
       return `${serverBase}/media/image/${
         this.value.frontCover._id
       }?password=${localStorage.getItem("password")}`;
-    return `${serverBase}/broken`;
+    return `${serverBase}/assets/broken.png`;
   }
 
   get backCover() {

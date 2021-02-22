@@ -1,5 +1,6 @@
 <template>
   <v-container fluid>
+    <BindFavicon />
     <BindTitle value="Markers" />
 
     <v-navigation-drawer v-if="showSidenav" style="z-index: 14" v-model="drawer" clipped app>
@@ -110,27 +111,50 @@
     <NoResults v-else-if="!fetchLoader && !numResults" />
     <Loading v-else />
 
-    <v-pagination
-      @input="loadPage"
-      v-model="page"
-      :total-visible="7"
-      :disabled="fetchLoader"
-      :length="numPages"
-    ></v-pagination>
+    <div class="mt-3" v-if="numResults && numPages > 1">
+      <v-pagination
+        @input="loadPage"
+        v-model="page"
+        :total-visible="9"
+        :disabled="fetchLoader"
+        :length="numPages"
+      ></v-pagination>
+      <div class="text-center mt-3">
+        <v-text-field
+          :disabled="fetchLoader"
+          solo
+          flat
+          color="primary"
+          v-model.number="page"
+          placeholder="Page #"
+          class="d-inline-block mr-2"
+          style="width: 60px"
+          hide-details
+        >
+        </v-text-field>
+        <v-btn
+          :disabled="fetchLoader"
+          color="primary"
+          class="text-none"
+          text
+          @click="loadPage(page)"
+          >Load</v-btn
+        >
+      </div>
+    </div>
   </v-container>
 </template>
 
 <script lang="ts">
-import { Component, Vue, Watch } from "vue-property-decorator";
-import Axios from "axios";
-import ApolloClient, { serverBase } from "../apollo";
+import { Component, Watch } from "vue-property-decorator";
+import ApolloClient from "../apollo";
 import gql from "graphql-tag";
 import { markerModule } from "../store/markers";
 import DrawerMixin from "@/mixins/drawer";
 import { mixins } from "vue-class-component";
 import { contextModule } from "@/store/context";
 import ILabel from "@/types/label";
-import MarkerCard from "@/components/MarkerCard.vue";
+import MarkerCard from "@/components/Cards/Marker.vue";
 
 @Component({
   components: { MarkerCard },
@@ -161,10 +185,6 @@ export default class MarkerList extends mixins(DrawerMixin) {
     {
       text: "Relevance",
       value: "relevance",
-    },
-    {
-      text: "A-Z",
-      value: "name",
     },
     {
       text: "Added to collection",
@@ -209,7 +229,12 @@ export default class MarkerList extends mixins(DrawerMixin) {
   }
 
   set page(page: number) {
-    markerModule.setPage(page);
+    const x = Number(page);
+    if (isNaN(x) || x <= 0 || x > this.numPages) {
+      markerModule.setPage(1);
+    } else {
+      markerModule.setPage(x || 1);
+    }
   }
 
   get page() {
@@ -276,52 +301,48 @@ export default class MarkerList extends mixins(DrawerMixin) {
   }
 
   async fetchPage(page: number, take = 24, random?: boolean, seed?: string) {
-    try {
-      const result = await ApolloClient.query({
-        query: gql`
-          query($query: MarkerSearchQuery!, $seed: String) {
-            getMarkers(query: $query, seed: $seed) {
-              items {
-                _id
+    const result = await ApolloClient.query({
+      query: gql`
+        query($query: MarkerSearchQuery!, $seed: String) {
+          getMarkers(query: $query, seed: $seed) {
+            items {
+              _id
+              name
+              time
+              favorite
+              bookmark
+              rating
+              scene {
                 name
-                time
-                favorite
-                bookmark
-                rating
-                scene {
-                  name
-                  _id
-                }
-                thumbnail {
-                  _id
-                }
+                _id
               }
-              numItems
-              numPages
+              thumbnail {
+                _id
+              }
             }
+            numItems
+            numPages
           }
-        `,
-        variables: {
-          query: {
-            query: this.query,
-            include: this.selectedLabels.include,
-            exclude: this.selectedLabels.exclude,
-            take,
-            page: page - 1,
-            sortDir: this.sortDir,
-            sortBy: random ? "$shuffle" : this.sortBy,
-            favorite: this.favoritesOnly,
-            bookmark: this.bookmarksOnly,
-            rating: this.ratingFilter,
-          },
-          seed: seed || localStorage.getItem("pm_seed") || "default",
+        }
+      `,
+      variables: {
+        query: {
+          query: this.query,
+          include: this.selectedLabels.include,
+          exclude: this.selectedLabels.exclude,
+          take,
+          page: page - 1,
+          sortDir: this.sortDir,
+          sortBy: random ? "$shuffle" : this.sortBy,
+          favorite: this.favoritesOnly,
+          bookmark: this.bookmarksOnly,
+          rating: this.ratingFilter,
         },
-      });
+        seed: seed || localStorage.getItem("pm_seed") || "default",
+      },
+    });
 
-      return result.data.getMarkers;
-    } catch (err) {
-      throw err;
-    }
+    return result.data.getMarkers;
   }
 
   refreshPage() {
@@ -350,7 +371,9 @@ export default class MarkerList extends mixins(DrawerMixin) {
   }
 
   mounted() {
-    if (!this.markers.length) this.refreshPage();
+    if (!this.markers.length) {
+      this.refreshPage();
+    }
   }
 
   beforeMount() {
@@ -361,6 +384,7 @@ export default class MarkerList extends mixins(DrawerMixin) {
             _id
             name
             aliases
+            color
           }
         }
       `,

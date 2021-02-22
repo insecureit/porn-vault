@@ -1,24 +1,25 @@
 import Marker from "../types/marker";
 import Scene from "../types/scene";
 import { mapAsync } from "../utils/async";
-import * as logger from "../utils/logger";
 import {
-  buildPagination,
-  filterBookmark,
-  filterExclude,
-  filterFavorites,
-  filterInclude,
-  filterRating,
+  bookmark,
+  excludeFilter,
+  favorite,
+  getActorNames,
+  includeFilter,
+  ISearchResults,
+  normalizeQuery,
+  performSearch,
+  ratingFilter,
+  searchQuery,
+  shuffle,
+  shuffleSwitch,
 } from "./common";
-import { Gianna } from "./internal";
+import { getClient, indexMap } from "./index";
 import { addSearchDocs, buildIndex, indexItems, ProgressCallback } from "./internal/buildIndex";
 
-export let index!: Gianna.Index<IMarkerSearchDoc>;
-
-const FIELDS = ["name", "labelNames", "sceneName", "actors", "actorNames"];
-
 export interface IMarkerSearchDoc {
-  _id: string;
+  id: string;
   addedOn: number;
   name: string;
   actors: string[];
@@ -30,6 +31,8 @@ export interface IMarkerSearchDoc {
   favorite: boolean;
   scene: string;
   sceneName: string;
+  custom: Record<string, boolean | string | number | string[] | null>;
+  numActors: number;
 }
 
 export async function createMarkerSearchDoc(marker: Marker): Promise<IMarkerSearchDoc> {
@@ -38,27 +41,37 @@ export async function createMarkerSearchDoc(marker: Marker): Promise<IMarkerSear
   const actors = await Scene.getActors(scene);
 
   return {
-    _id: marker._id,
+    id: marker._id,
     addedOn: marker.addedOn,
-    name: marker.name,
+    name: normalizeQuery(marker.name),
     actors: actors.map((a) => a._id),
-    actorNames: actors.map((a) => [a.name, ...a.aliases]).flat(),
+    actorNames: [...new Set(actors.map(getActorNames).flat())],
     labels: labels.map((l) => l._id),
-    labelNames: labels.map((l) => [l.name, ...l.aliases]).flat(),
+    labelNames: labels.map((l) => l.name),
     scene: scene ? scene._id : "",
     sceneName: scene ? scene.name : "",
     rating: marker.rating,
     bookmark: marker.bookmark,
     favorite: marker.favorite,
+    custom: marker.customFields,
+    numActors: actors.length,
   };
 }
 
 async function addMarkerSearchDocs(docs: IMarkerSearchDoc[]): Promise<void> {
-  return addSearchDocs(index, docs);
+  return addSearchDocs(indexMap.markers, docs);
 }
 
-export async function updateMarkers(markers: Marker[]): Promise<void> {
-  return index.update(await mapAsync(markers, createMarkerSearchDoc));
+export async function removeMarker(markerId: string): Promise<void> {
+  await getClient().delete({
+    index: indexMap.markers,
+    id: markerId,
+    type: "_doc",
+  });
+}
+
+export async function removeMarkers(markerIds: string[]): Promise<void> {
+  await mapAsync(markerIds, removeMarker);
 }
 
 export async function indexMarkers(
@@ -68,10 +81,8 @@ export async function indexMarkers(
   return indexItems(markers, createMarkerSearchDoc, addMarkerSearchDocs, progressCb);
 }
 
-export async function buildMarkerIndex(): Promise<Gianna.Index<IMarkerSearchDoc>> {
-  index = await Gianna.createIndex("markers", FIELDS);
-  await buildIndex("markers", Marker.getAll, indexMarkers);
-  return index;
+export async function buildMarkerIndex(): Promise<void> {
+  await buildIndex(indexMap.markers, Marker.getAll, indexMarkers);
 }
 
 export interface IMarkerSearchQuery {
@@ -90,52 +101,29 @@ export interface IMarkerSearchQuery {
 
 export async function searchMarkers(
   options: Partial<IMarkerSearchQuery>,
-  shuffleSeed = "default"
-): Promise<Gianna.ISearchResults> {
-  logger.log(`Searching markers for '${options.query}'...`);
+  shuffleSeed = "default",
+  extraFilter: unknown[] = []
+): Promise<ISearchResults> {
+  const query = searchQuery(options.query, ["name", "actorNames^1.5", "labelNames", "sceneName"]);
+  const _shuffle = shuffle(shuffleSeed, query, options.sortBy);
 
-  let sort = undefined as Gianna.ISortOptions | undefined;
-  const filter = {
-    type: "AND",
-    children: [],
-  } as Gianna.IFilterTreeGrouping;
+  return performSearch<IMarkerSearchDoc, typeof options>({
+    index: indexMap.markers,
+    options,
+    query: {
+      bool: {
+        ...shuffleSwitch(query, _shuffle),
+        filter: [
+          ...ratingFilter(options.rating),
+          ...bookmark(options.bookmark),
+          ...favorite(options.favorite),
 
-  filterFavorites(filter, options);
-  filterBookmark(filter, options);
-  filterRating(filter, options);
-  filterInclude(filter, options);
-  filterExclude(filter, options);
+          ...includeFilter(options.include),
+          ...excludeFilter(options.exclude),
 
-  if (options.sortBy) {
-    if (options.sortBy === "$shuffle") {
-      sort = {
-        sort_by: "$shuffle",
-        sort_asc: false,
-        sort_type: shuffleSeed,
-      };
-    } else {
-      // eslint-disable-next-line
-      const sortType = {
-        addedOn: "number",
-        name: "string",
-        rating: "number",
-        bookmark: "number",
-      }[options.sortBy];
-      sort = {
-        // eslint-disable-next-line camelcase
-        sort_by: options.sortBy,
-        // eslint-disable-next-line camelcase
-        sort_asc: options.sortDir === "asc",
-        // eslint-disable-next-line
-        sort_type: sortType,
-      };
-    }
-  }
-
-  return index.search({
-    query: options.query,
-    sort,
-    filter,
-    ...buildPagination(options.take, options.skip, options.page),
+          ...extraFilter,
+        ],
+      },
+    },
   });
 }
